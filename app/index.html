@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Demo Bank</title>
+  <style>
+    * { box-sizing: border-box; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #f4f6f8; color: #1f2933; }
+    header { background: #1f3a5f; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    main { max-width: 480px; margin: 32px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+    label { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input, select { width: 100%; padding: 10px; border: 1px solid #cbd2d9; border-radius: 6px; }
+    button { margin-top: 16px; padding: 10px 16px; border: 0; border-radius: 6px; background: #1f3a5f; color: #fff; cursor: pointer; }
+    button:disabled { background: #9aa5b1; cursor: not-allowed; }
+    .error { color: #c62828; margin-top: 8px; }
+    .success { color: #2e7d32; margin-top: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e4e7eb; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Demo Bank</strong>
+    <button id="logout" hidden>Cerrar sesión</button>
+  </header>
+
+  <main>
+    <!-- LOGIN -->
+    <section id="login-section" class="card">
+      <h1>Iniciar sesión</h1>
+      <form id="login-form" novalidate>
+        <label for="username">Usuario</label>
+        <input id="username" autocomplete="off" />
+        <label for="password">Contraseña</label>
+        <input id="password" type="password" />
+        <button type="submit">Ingresar</button>
+        <p id="login-error" class="error" role="alert" hidden></p>
+      </form>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section id="dashboard" hidden>
+      <div class="card">
+        <h1 id="welcome"></h1>
+        <p>Saldo disponible: <strong data-testid="balance"></strong></p>
+      </div>
+
+      <div class="card">
+        <h2>Transferir</h2>
+        <form id="transfer-form" novalidate>
+          <label for="destination">Cuenta destino</label>
+          <input id="destination" inputmode="numeric" placeholder="10 dígitos" />
+          <label for="amount">Monto</label>
+          <input id="amount" inputmode="numeric" />
+          <label for="type">Tipo de cuenta</label>
+          <select id="type">
+            <option value="">Selecciona</option>
+            <option value="ahorros">Ahorros</option>
+            <option value="corriente">Corriente</option>
+          </select>
+          <button type="submit" id="transfer-btn">Transferir</button>
+          <p id="transfer-error" class="error" role="alert" hidden></p>
+          <p id="transfer-success" class="success" role="status" hidden></p>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Historial</h2>
+        <p id="empty-history">No hay movimientos</p>
+        <table id="history-table" hidden>
+          <thead>
+            <tr><th>Cuenta</th><th>Tipo</th><th>Monto</th></tr>
+          </thead>
+          <tbody data-testid="history-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const USERS = {
+      flaco: { password: 'Qa2026*', name: 'Flaco', balance: 1500000 },
+      bloqueado: { password: 'Qa2026*', name: 'Bloqueado', balance: 0, locked: true }
+    };
+    const MAX_ATTEMPTS = 3;
+    let attempts = 0;
+    let currentUser = null;
+
+    const $ = (id) => document.getElementById(id);
+    const money = (n) => '$' + n.toLocaleString('es-CO');
+
+    function showMessage(el, text) { el.textContent = text; el.hidden = false; }
+    function hide(...els) { els.forEach((el) => (el.hidden = true)); }
+
+    // LOGIN
+    $('login-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const username = $('username').value.trim();
+      const password = $('password').value;
+      const error = $('login-error');
+
+      if (!username || !password) return showMessage(error, 'Usuario y contraseña son obligatorios');
+      if (attempts >= MAX_ATTEMPTS) return showMessage(error, 'Usuario bloqueado por intentos fallidos');
+
+      const user = USERS[username];
+      if (user && user.locked) return showMessage(error, 'Usuario bloqueado, contacta a soporte');
+      if (!user || user.password !== password) {
+        attempts++;
+        return showMessage(error, `Credenciales inválidas. Intentos restantes: ${MAX_ATTEMPTS - attempts}`);
+      }
+
+      attempts = 0;
+      currentUser = { ...user, history: [] };
+      hide(error, $('login-section'));
+      $('dashboard').hidden = false;
+      $('logout').hidden = false;
+      $('welcome').textContent = `Bienvenido, ${currentUser.name}`;
+      renderBalance();
+    });
+
+    // LOGOUT
+    $('logout').addEventListener('click', () => {
+      currentUser = null;
+      $('login-form').reset();
+      $('transfer-form').reset();
+      hide($('dashboard'), $('logout'), $('transfer-error'), $('transfer-success'));
+      $('login-section').hidden = false;
+    });
+
+    // TRANSFER
+    $('transfer-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const destination = $('destination').value.trim();
+      const amount = Number($('amount').value);
+      const type = $('type').value;
+      const error = $('transfer-error');
+      const success = $('transfer-success');
+      hide(error, success);
+
+      if (!/^\d{10}$/.test(destination)) return showMessage(error, 'La cuenta destino debe tener 10 dígitos');
+      if (!type) return showMessage(error, 'Selecciona el tipo de cuenta');
+      if (!amount || amount <= 0) return showMessage(error, 'Ingresa un monto válido');
+      if (amount < 1000) return showMessage(error, 'El monto mínimo es $1.000');
+      if (amount > currentUser.balance) return showMessage(error, 'Saldo insuficiente');
+
+      const btn = $('transfer-btn');
+      btn.disabled = true;
+      btn.textContent = 'Procesando...';
+
+      // Simulates latency of a real service
+      setTimeout(() => {
+        currentUser.balance -= amount;
+        currentUser.history.unshift({ destination, type, amount });
+        renderBalance();
+        renderHistory();
+        showMessage(success, `Transferencia exitosa por ${money(amount)}`);
+        $('transfer-form').reset();
+        btn.disabled = false;
+        btn.textContent = 'Transferir';
+      }, 800);
+    });
+
+    function renderBalance() {
+      document.querySelector('[data-testid="balance"]').textContent = money(currentUser.balance);
+    }
+
+    function renderHistory() {
+      const body = document.querySelector('[data-testid="history-body"]');
+      body.innerHTML = currentUser.history
+        .map((t) => `<tr><td>${t.destination}</td><td>${t.type}</td><td>${money(t.amount)}</td></tr>`)
+        .join('');
+      $('empty-history').hidden = currentUser.history.length > 0;
+      $('history-table').hidden = currentUser.history.length === 0;
+    }
+  </script>
+</body>
+</html>
